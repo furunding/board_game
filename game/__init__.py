@@ -1,0 +1,1 @@
+from .gomuku import Gomuku
