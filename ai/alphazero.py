@@ -2,6 +2,7 @@ import sys
 import math
 import itertools
 import collections
+import random
 import logging
 
 import numpy as np
@@ -12,6 +13,8 @@ from tensorflow import keras
 
 import boardgame2
 from boardgame2 import BLACK, WHITE
+
+from multiprocessing import Process, Pool
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG,
         format='%(asctime)s [%(levelname)s] %(message)s')
@@ -120,6 +123,7 @@ class AlphaZeroAgent:
         board, player = observation
         canonical_board = player * board
         s = boardgame2.strfboard(canonical_board)
+        
         while self.count[s].sum() < self.sim_count: # 多次 MCTS 搜索
             self.search(canonical_board, prior_noise=True)
         prob = self.count[s] / self.count[s].sum()
@@ -142,7 +146,6 @@ class AlphaZeroAgent:
             self.net.fit(canonical_boards, [probs, vs], verbose=0) # 训练
         self.reset_mcts()
     
-    
     def search(self, board, prior_noise=False): # MCTS 搜索
         s = boardgame2.strfboard(board)
         
@@ -151,9 +154,22 @@ class AlphaZeroAgent:
         if self.winner[s] is not None: # 赢家确定的情况
             return self.winner[s]
         
+        # if s not in self.policy: # 未计算过策略的叶子节点
+        #     pis, vs = self.net.predict(board[np.newaxis])
+        #     pi, v = pis[0], vs[0]
+        #     valid = self.env.get_valid((board, BLACK))
+        #     masked_pi = pi * valid
+        #     total_masked_pi = np.sum(masked_pi)
+        #     if total_masked_pi <= 0: # 所有的有效动作都没有概率，偶尔可能发生
+        #         masked_pi = valid # workaround
+        #         total_masked_pi = np.sum(masked_pi)
+        #     self.policy[s] = masked_pi / total_masked_pi
+        #     self.valid[s] = valid
+        #     return v
+
         if s not in self.policy: # 未计算过策略的叶子节点
             pis, vs = self.net.predict(board[np.newaxis])
-            pi, v = pis[0], vs[0]
+            pi, v = pis[0], vs[0][0]
             valid = self.env.get_valid((board, BLACK))
             masked_pi = pi * valid
             total_masked_pi = np.sum(masked_pi)
@@ -181,7 +197,6 @@ class AlphaZeroAgent:
         ub = np.where(self.valid[s], self.q[s] + coef * prior, np.nan)
         location_index = np.nanargmax(ub)
         location = np.unravel_index(location_index, board.shape)
-        
         (next_board, next_player), _, _, _ = self.env.next_step(
                 (board, BLACK), np.array(location))
         next_canonical_board = next_player * next_board
@@ -219,53 +234,3 @@ def self_play(env, agent, return_trajectory=False, verbose=False):
         return df_trajectory
     else:
         return winner
-
-
-if __name__ == "__main__":
-    """
-    AlphaZero 参数，可用来求解比较大型的问题（如五子棋）
-    """
-    # train_iterations = 700000 # 训练迭代次数
-    # train_episodes_per_iteration = 5000 # 每次迭代自我对弈回合数
-    # batches = 10 # 每回合进行几次批学习
-    # batch_size = 4096 # 批学习的批大小
-    # sim_count = 800 # MCTS需要的计数
-    # net_kwargs = {}
-    # net_kwargs['conv_filters'] = [256,]
-    # net_kwargs['residual_filters'] = [[256, 256],] * 19
-    # net_kwargs['policy_filters'] = [256,]
-
-    """
-    小规模参数，用来初步求解比较小的问题（如井字棋）
-    """
-    train_iterations = 100
-    train_episodes_per_iteration = 100
-    batches = 2
-    batch_size = 64
-    sim_count = 200
-    net_kwargs = {}
-    net_kwargs['conv_filters'] = [256,]
-    net_kwargs['residual_filters'] = [[256, 256],]
-    net_kwargs['policy_filters'] = [256,]
-
-    env = gym.make('Gomuku-v0', board_shape=(7, 7), target_length=4)
-
-    agent = AlphaZeroAgent(env=env, kwargs=net_kwargs, sim_count=sim_count,
-            batches=batches, batch_size=batch_size)
-
-    for iteration in range(train_iterations):
-        # 自我对弈
-        dfs_trajectory = []
-        for episode in range(train_episodes_per_iteration):
-            df_trajectory = self_play(env, agent,
-                    return_trajectory=True, verbose=False)
-            logging.info('训练 {} 回合 {}: 收集到 {} 条经验'.format(
-                    iteration, episode, len(df_trajectory)))
-            dfs_trajectory.append(df_trajectory)
-
-        # 利用经验进行学习
-        agent.learn(dfs_trajectory)
-        logging.info('训练 {}: 学习完成'.format(iteration))
-
-        # 演示训练结果
-        self_play(env, agent, verbose=True)

@@ -3,6 +3,9 @@ from enum import IntEnum
 import copy
 import time
 from game.gomuku import MAP_ENTRY_TYPE
+from .agent import Agent
+import numpy as np
+from collections import namedtuple
 
 class CHESS_TYPE(IntEnum):
 	NONE = 0,
@@ -20,7 +23,7 @@ FIVE = CHESS_TYPE.LIVE_FIVE.value
 FOUR, THREE, TWO = CHESS_TYPE.LIVE_FOUR.value, CHESS_TYPE.LIVE_THREE.value, CHESS_TYPE.LIVE_TWO.value
 SFOUR, STHREE, STWO = CHESS_TYPE.CHONG_FOUR.value, CHESS_TYPE.SLEEP_THREE.value, CHESS_TYPE.SLEEP_TWO.value
 			
-class EvaluateAI():
+class EvaluateAI(Agent):
 	def __init__(self, chess_len):
 		self.len = chess_len
 		# [horizon, vertical, left diagonal, right diagonal]
@@ -75,6 +78,19 @@ class EvaluateAI():
 		# time2 = time.time()
 		# print('time[%f] (%d, %d), score[%d] save[%d]' % ((time2-time1), x, y, score, self.save_count))
 		return (x, y)
+
+	def decide(self, observation):
+		board, player = observation
+		board_ = board.copy()
+		turn = namedtuple("turn", "value")
+		turn.value = int(-0.5 * player + 1.5)
+		for i in range(board.shape[0]):
+			for j in range(board.shape[1]):
+				if board_[i][j] == -1:
+					board_[i][j] = 2
+				elif board_[i][j] == 1:
+					board_[i][j] = 1
+		return np.array(self.findBestChess(board_, turn))
 	
 	# calculate score, FIXME: May Be Improved
 	def getScore(self, mine_count, opponent_count):

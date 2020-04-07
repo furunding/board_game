@@ -3,6 +3,7 @@ import pygame
 from absl import app
 from absl import flags
 import importlib
+from ai import MCTSPlayer
 
 FLAGS = flags.FLAGS
 
